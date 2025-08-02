@@ -1,50 +1,59 @@
-# Render Deployment Fix - Gunicorn Issues
+# Render Deployment Fix - Python 3.13 Compatibility Issue
 
 ## The Issue
 ```
-gunicorn.errors.AppImportError: Failed to find attribute 'app' in 'app'.
+ImportError: /opt/render/project/src/.venv/lib/python3.13/site-packages/psycopg2/_psycopg.cpython-313-x86_64-linux-gnu.so: undefined symbol: _PyInterpreterState_Get
 ```
 
-**Root Cause:** Render was ignoring the Procfile and using the default command `gunicorn app:app`, but there was no `app` variable accessible in the `app` module.
+**Root Cause:** Render was using Python 3.13, but `psycopg2-binary==2.9.7` is not compatible with Python 3.13.
 
 ## What Was Fixed
 
-### 1. Added Module-Level App Instance
-Updated `app/__init__.py` to include:
+### 1. Updated Python Runtime
+**File:** `runtime.txt`
+```
+python-3.12.7
+```
+Forces Render to use Python 3.12.7 instead of defaulting to 3.13.
+
+### 2. Updated psycopg2 Version
+**File:** `requirements.txt`
+```
+psycopg2-binary==2.9.10
+```
+Updated to the latest version with better Python 3.12+ compatibility.
+
+### 3. Defensive Database Initialization
+Updated `app/__init__.py` to handle database connection errors gracefully:
 ```python
-# Create a module-level app instance for gunicorn app:app
-app = create_app()
+# Create database tables
+with app.app_context():
+    try:
+        db.create_all()
+    except Exception as e:
+        # Log the error but don't fail the app creation
+        print(f"Warning: Database tables creation skipped: {str(e)}")
 ```
 
-This allows both `gunicorn app:app` (Render's default) and `gunicorn run:app` (our Procfile) to work.
+### 4. Added Build Script
+**File:** `build.sh`
+Explicit build commands for Render to ensure proper dependency installation.
 
-### 2. Updated Procfile
-**New:** `web: gunicorn run:app --host 0.0.0.0 --port $PORT`
+## Render Configuration
 
-### 3. Added Models Import
-Updated `app/__init__.py` to explicitly import models:
-```python
-# Import models to register them with SQLAlchemy
-from app.models import User, Todo
+### Build Command:
+```bash
+pip install -r requirements.txt
 ```
 
-### 4. Dual Entry Points
-Now supports both:
-- `gunicorn app:app` (Render's default fallback)
-- `gunicorn run:app` (our preferred method via Procfile)
-
-## How to Deploy the Fix
-
-1. **Commit and push these changes:**
-   ```bash
-   git add .
-   git commit -m "Fix Gunicorn deployment - add module-level app instance"
-   git push origin main
-   ```
-
-2. **In Render Dashboard:**
-   - The app will now work with either start command
-   - Render should auto-deploy successfully
+### Start Command (choose one):
+```bash
+gunicorn app:app
+```
+OR
+```bash
+gunicorn run:app
+```
 
 ## Environment Variables for Render
 
@@ -56,9 +65,22 @@ JWT_SECRET_KEY=1fb50a80eb7f7673b0de4bd67d926cb16374a66404959023a4c902134eb58820
 FLASK_ENV=production
 ```
 
+## How to Deploy the Fix
+
+1. **Commit and push these changes:**
+   ```bash
+   git add .
+   git commit -m "Fix Python 3.13 compatibility - force Python 3.12.7"
+   git push origin main
+   ```
+
+2. **In Render Dashboard:**
+   - Verify Python version is set to 3.12.7 in runtime.txt
+   - The app should now deploy successfully
+
 ## Testing After Deployment
 
 1. Health check: `GET https://your-app.onrender.com/`
 2. API info: `GET https://your-app.onrender.com/api`
 
-The app should now deploy successfully with either gunicorn command!
+The app should now deploy successfully with Python 3.12.7!

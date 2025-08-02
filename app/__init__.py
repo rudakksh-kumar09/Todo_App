@@ -72,7 +72,11 @@ def create_app(config_class=Config):
     
     # Create database tables
     with app.app_context():
-        db.create_all()
+        try:
+            db.create_all()
+        except Exception as e:
+            # Log the error but don't fail the app creation
+            print(f"Warning: Database tables creation skipped: {str(e)}")
     
     return app
 
