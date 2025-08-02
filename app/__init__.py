@@ -75,3 +75,6 @@ def create_app(config_class=Config):
         db.create_all()
     
     return app
+
+# Create a module-level app instance for gunicorn app:app
+app = create_app()

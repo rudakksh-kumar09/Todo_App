@@ -5,45 +5,46 @@
 gunicorn.errors.AppImportError: Failed to find attribute 'app' in 'app'.
 ```
 
+**Root Cause:** Render was ignoring the Procfile and using the default command `gunicorn app:app`, but there was no `app` variable accessible in the `app` module.
+
 ## What Was Fixed
 
-### 1. Updated Procfile
-**Before:** `web: gunicorn run:app`
-**After:** `web: gunicorn --bind 0.0.0.0:$PORT run:app`
+### 1. Added Module-Level App Instance
+Updated `app/__init__.py` to include:
+```python
+# Create a module-level app instance for gunicorn app:app
+app = create_app()
+```
 
-The new version explicitly binds to the PORT environment variable that Render provides.
+This allows both `gunicorn app:app` (Render's default) and `gunicorn run:app` (our Procfile) to work.
 
-### 2. Added Models Import
+### 2. Updated Procfile
+**New:** `web: gunicorn run:app --host 0.0.0.0 --port $PORT`
+
+### 3. Added Models Import
 Updated `app/__init__.py` to explicitly import models:
 ```python
 # Import models to register them with SQLAlchemy
 from app.models import User, Todo
 ```
 
-This ensures SQLAlchemy knows about the models when creating tables.
-
-### 3. Created Alternative WSGI Entry Point
-Added `wsgi.py` as a backup entry point if needed.
+### 4. Dual Entry Points
+Now supports both:
+- `gunicorn app:app` (Render's default fallback)
+- `gunicorn run:app` (our preferred method via Procfile)
 
 ## How to Deploy the Fix
 
 1. **Commit and push these changes:**
    ```bash
    git add .
-   git commit -m "Fix Gunicorn deployment issues"
+   git commit -m "Fix Gunicorn deployment - add module-level app instance"
    git push origin main
    ```
 
 2. **In Render Dashboard:**
-   - Go to your web service
-   - Trigger a manual deploy or wait for auto-deploy
-   - Monitor the build logs
-
-3. **If still failing, try alternative start command:**
-   In Render service settings, change the start command to:
-   ```
-   gunicorn --bind 0.0.0.0:$PORT wsgi:app
-   ```
+   - The app will now work with either start command
+   - Render should auto-deploy successfully
 
 ## Environment Variables for Render
 
@@ -60,4 +61,4 @@ FLASK_ENV=production
 1. Health check: `GET https://your-app.onrender.com/`
 2. API info: `GET https://your-app.onrender.com/api`
 
-The app should now deploy successfully!
+The app should now deploy successfully with either gunicorn command!
